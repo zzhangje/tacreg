@@ -199,7 +199,6 @@ def tacreg(
 
     dist_threshold = params.dist_threshold
     angle_threshold = params.angle_threshold
-    print(dist_threshold, angle_threshold)
     valid_edges = (
         (edges_dist_mat < dist_threshold)
         & (edges_angle_mat < angle_threshold)
