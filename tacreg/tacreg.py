@@ -268,6 +268,7 @@ def tacreg(
     candidates = sorted(
         [clique for clique in cliques if len(clique) > 2], key=len, reverse=True
     )[: params.candidate_size]
+    print("[Cand] Found {} candidates".format(len(candidates)))
 
     results = Parallel(n_jobs=params.parallel_jobs)(
         delayed(process_candidate)(
