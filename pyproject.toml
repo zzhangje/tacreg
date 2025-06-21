@@ -1,0 +1,21 @@
+[project]
+name = "tacreg"
+version = "0.1.0"
+description = "A Python package for the point cloud registration"
+authors = [{name = "Zirui Zhang", email = "zzhangje@connect.ust.hk"}]
+readme = "README.md"
+requires-python = ">=3.6, <3.13"
+dependencies = [
+    "numpy",
+    "open3d",
+    "networkx",
+    "scipy"
+]
+
+[project.optional-dependencies]
+# docs = ["sphinx", "myst-parser"]
+dev = ["pytest", "flake8", "black"]
+
+[build-system]
+requires = ["setuptools>=64.0.0"]
+build-backend = "setuptools.build_meta"

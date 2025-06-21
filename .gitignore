@@ -1,0 +1,66 @@
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+*.dist-info/
+*.whl
+*.db
+*.sqlite3
+*.log
+*.bak
+*.swp
+*.tmp
+*.pid
+*.pid.lock
+*.coverage
+*.cover
+*.hypothesis/
+*.tox/
+*.mypy_cache/
+*.pytest_cache/
+*.vscode/
+*.idea/
+*.DS_Store
+*.vscode-test/
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+# Jupyter Notebook metadata
+.ipynb
+# Virtual environment directories
+venv/
+.env
+# PyCharm project files
+.idea/
+# PyCharm caches
+*.iml
+# PyCharm virtual environment
+venv/
+# PyCharm system files
+*.pyc
+# PyCharm user settings
+*.user
+# PyCharm project files
+*.ipr
+# PyCharm workspace files
+*.iws
+# PyCharm logs
+*.log
+# PyCharm test results
+*.test
+# PyCharm coverage files
+*.coverage
+# PyCharm database files
+*.db
+# PyCharm cache files
+*.cache
+# PyCharm temporary files
+*.tmp
+# PyCharm backup files
+*.bak
+# PyCharm configuration files
+*.conf
+# PyCharm settings files
+*.settings
