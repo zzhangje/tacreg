@@ -266,7 +266,7 @@ def tacreg(
     G = nx.from_numpy_array(valid_edges)
     cliques = list(nx.find_cliques(G))
     candidates = sorted(
-        [clique for clique in cliques if len(clique) > 3], key=len, reverse=True
+        [clique for clique in cliques if len(clique) > 2], key=len, reverse=True
     )[: params.candidate_size]
 
     results = Parallel(n_jobs=params.parallel_jobs)(
