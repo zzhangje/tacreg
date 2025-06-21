@@ -5,6 +5,7 @@ import open3d as o3d
 import copy
 import networkx as nx
 from sklearn.neighbors import KDTree
+from joblib import Parallel, delayed
 
 
 @dataclass
@@ -147,6 +148,52 @@ def svd_estimate_transform_normal(src_points, tar_points, src_normals, tar_norma
     )
 
 
+def process_candidate(
+    candidate,
+    src_points,
+    tar_points,
+    src_normals,
+    tar_normals,
+    tar_whole_points,
+    tar_whole_normals,
+    tar_tree,
+):
+    clique = np.array(candidate)
+    src_pts = src_points[clique]
+    tar_pts = tar_points[clique]
+    src_norms = src_normals[clique]
+    tar_norms = tar_normals[clique]
+
+    try:
+        R, t = svd_estimate_transform_normal(src_pts, tar_pts, src_norms, tar_norms)
+    except np.linalg.LinAlgError:
+        return None
+
+    p_src = src_points @ R.T + t
+    closest_tar_idx_of_copy_src = np.asarray(
+        tar_tree.query(p_src, k=1, return_distance=False)
+    )[:, 0]
+    p_tar = tar_whole_points[closest_tar_idx_of_copy_src]
+    n_tar = tar_whole_normals[closest_tar_idx_of_copy_src]
+
+    A = np.hstack((np.cross(p_src, n_tar), n_tar))
+    b = np.sum(n_tar * (p_tar - p_src), axis=1)
+
+    try:
+        x, _, _, _ = np.linalg.lstsq(A, b, rcond=None)
+    except np.linalg.LinAlgError:
+        return None
+
+    dR = o3d.geometry.get_rotation_matrix_from_axis_angle(x[:3])
+    dt = x[3:]
+
+    return {
+        "R": dR @ R,
+        "t": dR @ t + dt,
+        "residual": np.linalg.norm(A @ x - b),
+    }
+
+
 def tacreg(
     src_pcd: o3d.geometry.PointCloud,
     tar_pcd: o3d.geometry.PointCloud,
@@ -167,7 +214,9 @@ def tacreg(
     src_iss, tar_iss, edges, _, tar_pcd_normals = fpfh_correspondence(
         src_pcd, tar_pcd, params=params
     )
-    tar_tree = KDTree(np.asarray(tar_pcd_normals.points))
+    tar_whole_points = np.asarray(tar_pcd_normals.points)
+    tar_whole_normals = np.asarray(tar_pcd_normals.normals)
+    tar_tree = KDTree(tar_whole_points)
 
     src_points = np.asarray(src_iss.points)[edges[:, 0]]
     tar_points = np.asarray(tar_iss.points)[edges[:, 1]]
@@ -216,63 +265,26 @@ def tacreg(
 
     G = nx.from_numpy_array(valid_edges)
     cliques = list(nx.find_cliques(G))
-    candidates = sorted(cliques, key=lambda x: len(x), reverse=True)[
-        : params.candidate_size
-    ]
+    candidates = sorted(
+        [clique for clique in cliques if len(clique) > 3], key=len, reverse=True
+    )[: params.candidate_size]
 
-    if not candidates:
-        raise ValueError("No valid candidates found for registration.")
-
-    results = []
-
-    for candidate in candidates:
-        if len(candidate) < 3:
-            break
-
-        clique = np.array(candidate)
-
-        src_pts = src_points[clique]
-        tar_pts = tar_points[clique]
-        src_norms = src_normals[clique]
-        tar_norms = tar_normals[clique]
-
-        R, t = svd_estimate_transform_normal(src_pts, tar_pts, src_norms, tar_norms)
-        tar_T_src = np.eye(4)
-        tar_T_src[:3, :3] = R
-        tar_T_src[:3, 3] = t
-
-        copy_src = copy.deepcopy(src_iss)
-        copy_src.transform(tar_T_src)
-
-        icp_src_points = np.asarray(copy_src.points)
-        closest_tar_idx_of_copy_src = np.asarray(
-            tar_tree.query(icp_src_points, k=1, return_distance=False)
-        )[:, 0]
-        icp_tar_points = np.asarray(tar_pcd_normals.points)[closest_tar_idx_of_copy_src]
-        icp_tar_normals = np.asarray(tar_pcd_normals.normals)[
-            closest_tar_idx_of_copy_src
-        ]
-
-        A = []
-        b = []
-
-        for i in range(len(icp_src_points)):
-            n_tar = icp_tar_normals[i]
-            p_src = icp_src_points[i]
-            p_tar = icp_tar_points[i]
-            A.append(np.hstack((np.cross(p_src, n_tar), n_tar)))
-            b.append(np.dot(n_tar, p_tar - p_src))
-
-        A = np.array(A)
-        b = np.array(b)
-
-        x, _, _, _ = np.linalg.lstsq(A, b, rcond=None)
-        dR = o3d.geometry.get_rotation_matrix_from_axis_angle(x[:3])
-        dt = x[3:]
-
-        results.append(
-            {"R": dR @ R, "t": dR @ t + dt, "residual": np.linalg.norm(A @ x - b)}
+    results = Parallel(n_jobs=params.parallel_jobs)(
+        delayed(process_candidate)(
+            candidate,
+            src_points,
+            tar_points,
+            src_normals,
+            tar_normals,
+            tar_whole_points,
+            tar_whole_normals,
+            tar_tree,
         )
+        for candidate in candidates
+    )
+    results = [res for res in results if res is not None]
+    if not results:
+        raise ValueError("No valid registration results found.")
 
     results = sorted(results, key=lambda x: x["residual"])
     best_result = results[0]
