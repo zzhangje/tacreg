@@ -14,6 +14,8 @@ class TacRegParam:
     voxel_size: float = 0.001
 
     # normal estimation
+    estimate_tar_normals: bool = True
+    estimate_src_normals: bool = True
     normal_radius: float = 0.01
     normal_max_nn: int = 30
 
@@ -67,18 +69,22 @@ def fpfh_correspondence(
     src_pcd = src_pcd.voxel_down_sample(voxel_size=params.voxel_size)
 
     # estimate normals and FPFH features
-    if tar_pcd.normals is None or len(tar_pcd.normals) == 0:
+    if params.estimate_tar_normals:
         tar_pcd.estimate_normals(
             o3d.geometry.KDTreeSearchParamHybrid(
                 radius=params.normal_radius, max_nn=params.normal_max_nn
             )
         )
-    if src_pcd.normals is None or len(src_pcd.normals) == 0:
+    else:
+        print("Warning: No normals estimated for source or target point clouds.")
+    if params.estimate_src_normals:
         src_pcd.estimate_normals(
             o3d.geometry.KDTreeSearchParamHybrid(
                 radius=params.normal_radius, max_nn=params.normal_max_nn
             )
         )
+    else:
+        print("Warning: No normals estimated for source or target point clouds.")
 
     tar_fpfh = o3d.pipelines.registration.compute_fpfh_feature(
         tar_pcd,
@@ -272,6 +278,7 @@ def tacreg(
         & (edges_angle_mat < angle_threshold)
         & (~np.eye(edges.shape[0], dtype=bool))
     )
+    print(f"[Adj] Found {np.sum(valid_edges)} valid edges")
     for i in range(len(valid_edges[0])):
         for j in range(i + 1, len(valid_edges[0])):
             if valid_edges[i, j]:
