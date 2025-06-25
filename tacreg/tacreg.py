@@ -76,7 +76,7 @@ def fpfh_correspondence(
             )
         )
     else:
-        print("Warning: No normals estimated for source or target point clouds.")
+        print("Warning: TacReg does not estimate normals for target point cloud.")
     if params.estimate_src_normals:
         src_pcd.estimate_normals(
             o3d.geometry.KDTreeSearchParamHybrid(
@@ -84,7 +84,7 @@ def fpfh_correspondence(
             )
         )
     else:
-        print("Warning: No normals estimated for source or target point clouds.")
+        print("Warning: TacReg does not estimate normals for source point cloud.")
 
     tar_fpfh = o3d.pipelines.registration.compute_fpfh_feature(
         tar_pcd,
