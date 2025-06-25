@@ -10,22 +10,34 @@ from joblib import Parallel, delayed
 
 @dataclass
 class TacRegParam:
-    dist_threshold: float = 0.008
-    angle_threshold: float = np.radians(30)
-    candidate_size: int = 20000
-    parallel_jobs: int = 4
-
+    # downsample
     voxel_size: float = 0.001
+
+    # normal estimation
     normal_radius: float = 0.01
     normal_max_nn: int = 30
+
+    # ISS keypoints
     iss_salient_radius: float = 0.004
     iss_non_max_radius: float = 0.003
     iss_gamma_21: float = 0.975
     iss_gamma_32: float = 0.975
     iss_min_neighbors: int = 5
+
+    # FPFH features
     fpfh_radius: float = 0.005
     fpfh_max_nn: int = 100
+
+    # correspondence
     correspondence_size: int = 500
+
+    # graph parameters
+    dist_threshold: float = 0.008
+    angle_threshold: float = np.radians(30)
+
+    # verification parameters
+    candidate_size: int = 20000
+    parallel_jobs: int = 4
 
 
 def fpfh_correspondence(
@@ -55,16 +67,19 @@ def fpfh_correspondence(
     src_pcd = src_pcd.voxel_down_sample(voxel_size=params.voxel_size)
 
     # estimate normals and FPFH features
-    tar_pcd.estimate_normals(
-        o3d.geometry.KDTreeSearchParamHybrid(
-            radius=params.normal_radius, max_nn=params.normal_max_nn
+    if tar_pcd.normals is None or len(tar_pcd.normals) == 0:
+        tar_pcd.estimate_normals(
+            o3d.geometry.KDTreeSearchParamHybrid(
+                radius=params.normal_radius, max_nn=params.normal_max_nn
+            )
         )
-    )
-    src_pcd.estimate_normals(
-        o3d.geometry.KDTreeSearchParamHybrid(
-            radius=params.normal_radius, max_nn=params.normal_max_nn
+    if src_pcd.normals is None or len(src_pcd.normals) == 0:
+        src_pcd.estimate_normals(
+            o3d.geometry.KDTreeSearchParamHybrid(
+                radius=params.normal_radius, max_nn=params.normal_max_nn
+            )
         )
-    )
+
     tar_fpfh = o3d.pipelines.registration.compute_fpfh_feature(
         tar_pcd,
         o3d.geometry.KDTreeSearchParamHybrid(
@@ -182,7 +197,11 @@ def process_candidate(
     try:
         x, _, _, _ = np.linalg.lstsq(A, b, rcond=None)
     except np.linalg.LinAlgError:
-        return None
+        return {
+            "R": R,
+            "t": t,
+            "residual": np.linalg.norm(b),
+        }
 
     dR = o3d.geometry.get_rotation_matrix_from_axis_angle(x[:3])
     dt = x[3:]
