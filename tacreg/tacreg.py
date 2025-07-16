@@ -230,7 +230,7 @@ def tacreg(
     src_pcd: o3d.geometry.PointCloud,
     tar_pcd: o3d.geometry.PointCloud,
     params: TacRegParam = TacRegParam(),
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray, float]:
     """
     Perform TAC-REG registration on source and target point clouds.
 
@@ -241,7 +241,7 @@ def tacreg(
         params (TacRegParam): Parameters for TAC-REG.
 
     Returns:
-        Tuple[np.ndarray, np.ndarray]: Rotation and translation matrices for registration.
+        Tuple[np.ndarray, np.ndarray, float]: Rotation matrix, translation vector and score of the registration.
     """
     src_iss, tar_iss, edges, _, tar_pcd_normals = fpfh_correspondence(
         src_pcd, tar_pcd, params=params
@@ -326,4 +326,4 @@ def tacreg(
     results = sorted(results, key=lambda x: x["residual"])
     best_result = results[0]
 
-    return best_result["R"], best_result["t"]
+    return best_result["R"], best_result["t"], np.exp(-best_result["residual"])
