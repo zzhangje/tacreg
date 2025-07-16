@@ -41,6 +41,9 @@ class TacRegParam:
     candidate_size: int = 20000
     parallel_jobs: int = 4
 
+    # debug
+    verbose: bool = False
+
 
 def fpfh_correspondence(
     src_pcd: o3d.geometry.PointCloud,
@@ -126,7 +129,10 @@ def fpfh_correspondence(
     for i in range(len(src_iss_idx)):
         [_, idx, _] = src_tree.search_knn_vector_3d(src_iss.points[i], 1)
         src_iss_idx[i] = idx[0]
-    print(f"[ISS] Source: {len(src_iss_idx)} points, Target: {len(tar_iss_idx)} points")
+    if params.verbose:
+        print(
+            f"[ISS] Source: {len(src_iss_idx)} points, Target: {len(tar_iss_idx)} points"
+        )
 
     np_src_fpfh = src_fpfh.data.T[src_iss_idx]
     np_tar_fpfh = tar_fpfh.data.T[tar_iss_idx]
@@ -141,7 +147,8 @@ def fpfh_correspondence(
         for tar_idx in tar_indices:
             edge_list.append(np.array((src_idx, tar_idx)))
 
-    print(f"[Edge] Found {len(edge_list)} correspondences")
+    if params.verbose:
+        print(f"[Edge] Found {len(edge_list)} correspondences")
 
     return src_iss, tar_iss, np.array(edge_list), src_pcd, tar_pcd
 
@@ -278,7 +285,8 @@ def tacreg(
         & (edges_angle_mat < angle_threshold)
         & (~np.eye(edges.shape[0], dtype=bool))
     )
-    print(f"[Adj] Found {np.sum(valid_edges)} valid edges")
+    if params.verbose:
+        print(f"[Adj] Found {np.sum(valid_edges)} valid edges")
     for i in range(len(valid_edges[0])):
         for j in range(i + 1, len(valid_edges[0])):
             if valid_edges[i, j]:
@@ -287,14 +295,16 @@ def tacreg(
                 if src_i == src_j or tar_i == tar_j:
                     valid_edges[i, j] = False
                     valid_edges[j, i] = False
-    print(f"[Adj] Graph degree: {np.sum(valid_edges)} edges")
+    if params.verbose:
+        print(f"[Adj] Graph degree: {np.sum(valid_edges)} edges")
 
     G = nx.from_numpy_array(valid_edges)
     cliques = list(nx.find_cliques(G))
     candidates = sorted(
         [clique for clique in cliques if len(clique) > 2], key=len, reverse=True
     )[: params.candidate_size]
-    print("[Cand] Found {} candidates".format(len(candidates)))
+    if params.verbose:
+        print("[Cand] Found {} candidates".format(len(candidates)))
 
     results = Parallel(n_jobs=params.parallel_jobs)(
         delayed(process_candidate)(
