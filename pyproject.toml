@@ -9,7 +9,9 @@ dependencies = [
     "numpy",
     "open3d",
     "networkx",
-    "scipy"
+    "scipy",
+    "scikit-learn",
+    "joblib"
 ]
 
 [project.optional-dependencies]
