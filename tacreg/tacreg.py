@@ -386,6 +386,7 @@ def tacreg(
     score = np.exp(-best_result["residual"])
     t1 = time.perf_counter()
     timings["transformation_verification"] = total_ver + (t1 - t0)
+    timings["transformation_cpu"] = total_est + total_ver + (t1 - t0)
 
     if params.each_module_time:
         return (
