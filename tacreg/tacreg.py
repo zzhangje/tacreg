@@ -37,6 +37,9 @@ class TacRegParam:
     dist_threshold: float = 0.008
     angle_threshold: float = np.radians(30)
 
+    # estimation parameters
+    alpha: float = 1e-3
+
     # verification parameters
     candidate_size: int = 20000
     parallel_jobs: int = 4
@@ -153,13 +156,15 @@ def fpfh_correspondence(
     return src_iss, tar_iss, np.array(edge_list), src_pcd, tar_pcd
 
 
-def svd_estimate_transform_normal(src_points, tar_points, src_normals, tar_normals):
+def svd_estimate_transform_normal(
+    src_points, tar_points, src_normals, tar_normals, alpha=1e-3
+):
     src_centroid = np.average(src_points, axis=0)
     tar_centroid = np.average(tar_points, axis=0)
-    src_centered = (src_points - src_centroid) * 1e3
-    tar_centered = (tar_points - tar_centroid) * 1e3
-    src_stack = np.vstack([src_centered, src_normals])
-    tar_stack = np.vstack([tar_centered, tar_normals])
+    src_centered = src_points - src_centroid
+    tar_centered = tar_points - tar_centroid
+    src_stack = np.vstack([src_centered, src_normals * alpha])
+    tar_stack = np.vstack([tar_centered, tar_normals * alpha])
 
     H = src_centered.T @ tar_centered
     U, S, Vt = np.linalg.svd(H)
@@ -185,6 +190,7 @@ def process_candidate(
     tar_whole_points,
     tar_whole_normals,
     tar_tree,
+    alpha=1e-3,
 ):
     clique = np.array(candidate)
     src_pts = src_points[clique]
@@ -193,7 +199,9 @@ def process_candidate(
     tar_norms = tar_normals[clique]
 
     try:
-        R, t = svd_estimate_transform_normal(src_pts, tar_pts, src_norms, tar_norms)
+        R, t = svd_estimate_transform_normal(
+            src_pts, tar_pts, src_norms, tar_norms, alpha=alpha
+        )
     except np.linalg.LinAlgError:
         return None
 
@@ -316,6 +324,7 @@ def tacreg(
             tar_whole_points,
             tar_whole_normals,
             tar_tree,
+            alpha=params.alpha,
         )
         for candidate in candidates
     )
