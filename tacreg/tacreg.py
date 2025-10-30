@@ -6,6 +6,7 @@ import copy
 import networkx as nx
 from sklearn.neighbors import KDTree
 from joblib import Parallel, delayed
+import time
 
 
 @dataclass
@@ -46,6 +47,7 @@ class TacRegParam:
 
     # debug
     verbose: bool = False
+    each_module_time: bool = False
 
 
 def fpfh_correspondence(
@@ -198,12 +200,16 @@ def process_candidate(
     src_norms = src_normals[clique]
     tar_norms = tar_normals[clique]
 
+    # Estimation step (SVD-based initial transform)
+    t_est0 = time.perf_counter()
     try:
         R, t = svd_estimate_transform_normal(
             src_pts, tar_pts, src_norms, tar_norms, alpha=alpha
         )
     except np.linalg.LinAlgError:
         return None
+    t_est1 = time.perf_counter()
+    est_time = t_est1 - t_est0
 
     p_src = src_points @ R.T + t
     closest_tar_idx_of_copy_src = np.asarray(
@@ -215,14 +221,20 @@ def process_candidate(
     A = np.hstack((np.cross(p_src, n_tar), n_tar))
     b = np.sum(n_tar * (p_tar - p_src), axis=1)
 
+    # Verification / refinement step (solve for small correction)
+    t_ver0 = time.perf_counter()
     try:
         x, _, _, _ = np.linalg.lstsq(A, b, rcond=None)
     except np.linalg.LinAlgError:
+        ver_time = time.perf_counter() - t_ver0
         return {
             "R": R,
             "t": t,
             "residual": np.linalg.norm(b),
+            "timings": {"estimation": est_time, "verification": ver_time},
         }
+    t_ver1 = time.perf_counter()
+    ver_time = t_ver1 - t_ver0
 
     dR = o3d.geometry.get_rotation_matrix_from_axis_angle(x[:3])
     dt = x[3:]
@@ -231,6 +243,7 @@ def process_candidate(
         "R": dR @ R,
         "t": dR @ t + dt,
         "residual": np.linalg.norm(A @ x - b),
+        "timings": {"estimation": est_time, "verification": ver_time},
     }
 
 
@@ -251,9 +264,17 @@ def tacreg(
     Returns:
         Tuple[np.ndarray, np.ndarray, float]: Rotation matrix, translation vector and score of the registration.
     """
+    timings = {}
+
+    # Module: fpfh_correspondence
+    t0 = time.perf_counter()
     src_iss, tar_iss, edges, _, tar_pcd_normals = fpfh_correspondence(
         src_pcd, tar_pcd, params=params
     )
+    t1 = time.perf_counter()
+    timings["fpfh_correspondence"] = t1 - t0
+    # Module: graph_construction
+    t0 = time.perf_counter()
     tar_whole_points = np.asarray(tar_pcd_normals.points)
     tar_whole_normals = np.asarray(tar_pcd_normals.normals)
     tar_tree = KDTree(tar_whole_points)
@@ -307,13 +328,22 @@ def tacreg(
         print(f"[Adj] Graph degree: {np.sum(valid_edges)} edges")
 
     G = nx.from_numpy_array(valid_edges)
+    t1 = time.perf_counter()
+    timings["graph_construction"] = t1 - t0
+
+    # Module: candidate_generation
+    t0 = time.perf_counter()
     cliques = list(nx.find_cliques(G))
     candidates = sorted(
         [clique for clique in cliques if len(clique) > 2], key=len, reverse=True
     )[: params.candidate_size]
+    t1 = time.perf_counter()
+    timings["candidate_generation"] = t1 - t0
     if params.verbose:
         print("[Cand] Found {} candidates".format(len(candidates)))
 
+    # Module: transformation_estimation + transformation_verification (per-candidate)
+    t0 = time.perf_counter()
     results = Parallel(n_jobs=params.parallel_jobs)(
         delayed(process_candidate)(
             candidate,
@@ -329,10 +359,39 @@ def tacreg(
         for candidate in candidates
     )
     results = [res for res in results if res is not None]
+    t1 = time.perf_counter()
+
     if not results:
         raise ValueError("No valid registration results found.")
+
+    # Aggregate per-candidate internal timings (estimation / verification)
+    total_est = 0.0
+    total_ver = 0.0
+    for r in results:
+        tm = r.get("timings") if isinstance(r, dict) else None
+        if tm:
+            total_est += float(tm.get("estimation", 0.0))
+            total_ver += float(tm.get("verification", 0.0))
+
+    # Store both aggregated internal CPU times and wall-clock for the parallel step
+    timings["transformation_estimation"] = total_est
+    timings["transformation_verification"] = total_ver
+    timings["transformation_parallel_wall_time"] = t1 - t0
 
     results = sorted(results, key=lambda x: x["residual"])
     best_result = results[0]
 
-    return best_result["R"], best_result["t"], np.exp(-best_result["residual"])
+    # Module: transformation_verification (final scoring / packaging)
+    t0 = time.perf_counter()
+    score = np.exp(-best_result["residual"])
+    t1 = time.perf_counter()
+    timings["transformation_verification"] = total_ver + (t1 - t0)
+
+    if params.each_module_time:
+        return (
+            best_result["R"],
+            best_result["t"],
+            score,
+            timings,
+        )
+    return best_result["R"], best_result["t"], score
